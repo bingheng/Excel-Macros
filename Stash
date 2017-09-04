@@ -1,0 +1,170 @@
+
+    
+'Collating values from user
+    Dim probesuccess As String
+    probesuccess = InputBox("From https://test.apigee.com/#/probes/dashboard/day/" & vbCrLf & "default/ALL please input the respective success percentage rates for ATM, Branch and PCA separated by spaces, eg. 100 99.32 82.1")
+    probesuccess = Replace(probesuccess, "%", "")
+    
+    Dim trafficsuccess As String
+    trafficsuccess = InputBox("From https://enterprise.apigee.com/platform/" & vbCrLf & "nationwide-building-society/proxy-performance please input the traffic success rates, omitting 429 Errors.")
+    trafficsuccess = Replace(trafficsuccess, "%", "")
+    
+'Opening all the files
+    Workbooks.Open dir & "\sla1_total_successful_traffic.csv"
+    Workbooks.Open dir & "\sla_2_first_byte_within_500ms.csv"
+    Workbooks.Open dir & "\first_byte_response.csv"
+
+    Workbooks.Open dir & "\Daily Report Working Copy.xlsx"
+    
+'Copying & sorting SLA 1 data into the Report
+    Workbooks("sla1_total_successful_traffic.csv").Sheets("sla1_total_successful_traffic").Range("A1:C73").Copy Workbooks("Daily Report Working Copy.xlsx").Sheets("Total Traffic per Hour").Range("A1:C73")
+    Workbooks("sla1_total_successful_traffic.csv").Close SaveChanges:=False
+    Workbooks("Daily Report Working Copy.xlsx").Sheets("Total Traffic per Hour").Activate
+        Range("A1:C73").Sort key1:=Range("A2:A73"), order1:=xlAscending, Header:=xlYes
+        
+'Copying & sorting SLA 2 data into the Report
+    Workbooks("sla_2_first_byte_within_500ms.csv").Sheets("sla_2_first_byte_within_500ms").Range("A1:E73").Copy Workbooks("Daily Report Working Copy.xlsx").Sheets("First Byte within 500ms").Range("A1:E73")
+    Workbooks("sla_2_first_byte_within_500ms.csv").Close SaveChanges:=False
+    Workbooks("Daily Report Working Copy.xlsx").Sheets("First Byte within 500ms").Activate
+        Range("A1:E73").Sort key1:=Range("A2:A73"), order1:=xlAscending, Header:=xlYes
+
+'Copying & sorting first byte response Report
+    Workbooks("first_byte_response.csv").Sheets("first_byte_response").Range("A1:F73").Copy Workbooks("Daily Report Working Copy.xlsx").Sheets("First Byte Responses").Range("A1:F73")
+    Workbooks("first_byte_response.csv").Close SaveChanges:=False
+    Workbooks("Daily Report Working Copy.xlsx").Sheets("First Byte Responses").Activate
+        Range("A1:F73").Sort key1:=Range("A2:A73"), order1:=xlAscending, Header:=xlYes
+
+'Calculating first byte response times & generating all clear report message
+    Workbooks("Daily Report Working Copy.xlsx").Sheets("First Byte Responses").Activate
+    Range("G2:G73").FormulaR1C1 = "=RC[-4]*RC[-1]"
+    
+    Dim apiname, avg1brarray As Variant
+    apiname = Array("ATM", "Branch", "PCA")
+    avg1barray = Array(0, 0, 0)
+    For x = 0 To 2
+        avg1br = Application.WorksheetFunction.SumIf(Range("A2:A73"), apiname(x), Range("G2:G73")) / Application.WorksheetFunction.SumIf(Range("A2:A73"), apiname(x), Range("C2:C73"))
+        avg1barray(x) = Format(avg1br, "#,##0.00")
+    Next x
+    Range("G2:G73").Clear
+
+'Populating fields of Report
+    Workbooks("Daily Report Working Copy.xlsx").Sheets("Report").Activate
+    
+    '0 Header
+    Cells(3, 1) = "09:00 " & WeekdayName(Weekday(reportdate - 1), True, vbSunday) & " " & Day(reportdate - 1) & " " & Left(MonthName(Month(reportdate - 1)), 3) & " " & Year(reportdate - 1) & " to 09:00 " & WeekdayName(Weekday(reportdate), True, vbSunday) & " " & Day(reportdate) & " " & Left(MonthName(Month(reportdate)), 3) & " " & Year(reportdate) & " GMTDT"
+    
+    '1 Executive Summary section
+    Cells(8, 1) = "All APIs are continuing to perform well within the IE's SLAs with an average first byte response of " & avg1barray(0) & "ms, " & avg1barray(1) & "ms and " & avg1barray(2) & "ms for ATM, Branch and PCA APIs respectively."
+    
+    'Populating Availability as % of Time field
+    Dim successrate As Single
+    For x = 1 To counter - 1
+        Cells(x + 41, 6) = Left(probesuccess, InStr(probesuccess, " ") - 1) / 100
+        probesuccess = Right(probesuccess, Len(probesuccess) - InStr(probesuccess, " "))
+    Next x
+    Cells(counter + 41, 6) = probesuccess / 100
+    
+    'Populating SLA 5 status
+    For x = 0 To (counter - 1)
+        updatetime = Left(sla5(x), 4)
+        updatetimecheck = updatetime / 1
+        updatedate = Right(sla5(x), 10)
+        updatedatecheck = DateSerial(Right(updatedate, 4) / 1, Left(Right(updatedate, 7), 2) / 1, Left(updatedate, 2) / 1)
+        If (reportdate - 1 = updatedatecheck And updatetimecheck >= 900) Or (reportdate = updatedatecheck And updatetimecheck <= 1100) Then
+            Cells(29 + x, 6) = "Successful update on " & Left(updatetime, 2) & ":" & Right(updatetime, 2) & " " & Day(updatedatecheck) & " " & Left(MonthName(Month(updatedatecheck)), 3)
+        Else: Cells(29 + x, 6) = "N/A"
+        End If
+    Next x
+    
+    '2.3 Traffic section
+    Cells(73, 1) = "There were no unusual levels of traffic errors observed, with " & Format(trafficsuccess, "##0.00") & "% of total requests resulting in a successful response during the 24-hour period from 00:01 " & Day(reportdate - 1) & " " & Left(MonthName(Month(reportdate - 1)), 3) & "."
+    
+'Generating graphs with correct timestamps
+    Workbooks("Daily Report Working Copy.xlsx").Sheets("Daily API Data").Activate
+    Cells(19, 1) = reportdate
+    
+    
+'Saving Apigee Dashboard both as Working Copy, and as report with datestamp
+    Application.DisplayAlerts = False
+    Workbooks("Daily Report Working Copy.xlsx").Save
+    Workbooks("Daily Report Working Copy.xlsx").SaveAs Filename:=dir & "\Output\CMA1 Daily Performance Report - " & Format(Day(reportdate), "00") & Format(Month(reportdate), "00") & Year(reportdate) & ".xlsx", FileFormat:=xlOpenXMLWorkbook, CreateBackup:=False _
+
+    Application.DisplayAlerts = True
+
+'Notifying user of failures in copying data
+    
+    For x = 2 To 13
+        If Cells(31, x) = "Fail" Then
+            dataverif = False
+        End If
+    Next x
+    If dataverif = False Then
+        MsgBox "Incorrect data transfer: The data may not have been transferred correctly, please check. Most commonly, a wrong report has been downloaded."
+    End If
+    
+
+'Notifying user of RAG Red
+    If Cells(7, 2) = "Red" Then
+        MsgBox "RAG is Red: please provide commentary in Section 1."
+    End If
+    
+
+'Notifying user of required action
+    If trafficsuccess / 100 > 1 Or trafficsuccess / 100 < 0.95 Then
+        MsgBox "Numerous traffic errors: Please provide commentary in Section 2.3."
+    End If
+
+
+
+Set x = Workbooks.Open(t)
+    
+        lColi = Cells(1, Columns.Count).End(xlToLeft).Column 'Find the last non-blank Column
+        lRow = Cells(Rows.Count, 1).End(xlUp).Row 'Find the last non-blank Row
+        Cells(1, lColi + 1) = "Date"
+        Cells(1, lColi + 2) = "Time (24h)"
+        lCol = Split(Cells(, lColi).Address, "$")(1)
+        c1 = Split(Cells(, lColi + 1).Address, "$")(1)
+        c2 = Split(Cells(, lColi + 2).Address, "$")(1)
+        Range(c1 & "2:" & c1 & lRow).FormulaR1C1 = "=DATE(LEFT(RC2,4), RIGHT(LEFT(RC2,7),2), RIGHT(LEFT(RC2,10),2))"
+        Range(c2 & "2:" & c2 & lRow).FormulaR1C1 = "=RIGHT(LEFT(RC2,13),2)"
+
+    For i = 1 To dc - 1
+    
+        Set y = Workbooks.Open(dir & fn & " (" & i & ")" & fe)
+
+        For Each ws In Workbooks(fn & " (" & i & ")" & fe).Worksheets
+            ws.Activate
+            'ws.Name = "Sheet1"
+        Next
+
+        lColi = Cells(1, Columns.Count).End(xlToLeft).Column 'Find the last non-blank Column
+        lRow = Cells(Rows.Count, 1).End(xlUp).Row 'Find the last non-blank Row
+        Cells(1, lColi + 1) = "Date"
+        Cells(1, lColi + 2) = "Time (24h)"
+        lCol = Split(Cells(, lColi).Address, "$")(1)
+        c1 = Split(Cells(, lColi + 1).Address, "$")(1)
+        c2 = Split(Cells(, lColi + 2).Address, "$")(1)
+        Range(c1 & "2:" & c1 & lRow).FormulaR1C1 = "=DATE(LEFT(RC2,4), RIGHT(LEFT(RC2,7),2), RIGHT(LEFT(RC2,10),2))"
+        Range(c2 & "2:" & c2 & lRow).FormulaR1C1 = "=RIGHT(LEFT(RC2,13),2)"
+
+        Range("A2:" & c2 & lRow).Copy 'Copy data
+        
+        For Each ws In Workbooks(fn & fe).Worksheets
+            ws.Activate
+        Next
+        
+        lRow = Cells(Rows.Count, 1).End(xlUp).Row 'Find the last non-blank cell
+
+        Range("A" & lRow + 1).PasteSpecial xlPasteValues
+        
+        Workbooks(fn & " (" & i & ")" & fe).Close SaveChanges:=False
+    
+    Next i
+    
+    lRow = Cells(Rows.Count, 1).End(xlUp).Row 'Find the last non-blank cell
+    
+    Range(c1 & "2:" & c1 & lRow).Select
+    Selection.NumberFormat = "d/m/yyyy"
+    Columns("A:" & c2).Select
+    Selection.Sort Key1:=Range("A:A"), Key2:=Range(c1 & ":" & c1), Key3:=Range(c2 & ":" & c2), Order1:=xlAscending, Header:=xlYes, OrderCustom:=1, Orientation:=xlTopToBottom, DataOption1:=xlSortNormal
+    
